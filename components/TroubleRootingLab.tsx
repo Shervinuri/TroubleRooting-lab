@@ -9,6 +9,14 @@ import { encode, decode, decodeAudioData, createBlob } from '../utils/audio';
 
 type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
 
+// As requested, the four API keys are hardcoded here.
+const API_KEYS = [
+  'AIzaSyBFyS3uoZ-mHhIlfbe5uTgaAMjuVnbDDbA',
+  'AIzaSyCPps07WLQK4q1lWxtTVglN8ua8JzCEGoY',
+  'AIzaSyA_RZu4dt5BtGnolFYkzoxniANwIP5K6T4',
+  'AIzaSyB-_CsOVF-VA_aV9_FhTi0L1Xnp_M3X0uM'
+];
+
 // Regex to parse markdown-like formats from the model's text response
 const parseTranscriptToParts = (text: string): ContentPart[] => {
     if (!text) return [];
@@ -47,10 +55,10 @@ const parseTranscriptToParts = (text: string): ContentPart[] => {
 };
 
 
-// FIX: Removed apiKey prop to use environment variables directly as per guidelines.
 const TroubleRootingLab: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('IDLE');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [currentInputTranscription, setCurrentInputTranscription] = useState('');
   const [currentOutputTranscription, setCurrentOutputTranscription] = useState('');
 
@@ -69,6 +77,9 @@ const TroubleRootingLab: React.FC = () => {
     nextStartTime: number;
     sources: Set<AudioBufferSourceNode>;
   }>({ audioContext: null, nextStartTime: 0, sources: new Set() });
+  
+  const shuffledKeysRef = useRef([...API_KEYS].sort(() => 0.5 - Math.random()));
+  const keyIndexRef = useRef(0);
 
 
   const scrollToBottom = () => {
@@ -86,7 +97,7 @@ const TroubleRootingLab: React.FC = () => {
       audioResourcesRef.current.source?.disconnect();
       // FIX: Check if audio context is already closed before attempting to close it.
       if (audioResourcesRef.current.audioContext?.state !== 'closed') {
-        audioResourcesRef.current.audioContext?.close();
+        audioResourcesRef.current.audioContext?.close().catch(console.error);
       }
       audioResourcesRef.current = { stream: null, audioContext: null, scriptProcessor: null, source: null };
       
@@ -95,25 +106,41 @@ const TroubleRootingLab: React.FC = () => {
       outputAudioRef.current.sources.clear();
       // FIX: Check if audio context is already closed before attempting to close it.
       if (outputAudioRef.current.audioContext?.state !== 'closed') {
-        outputAudioRef.current.audioContext?.close();
+        outputAudioRef.current.audioContext?.close().catch(console.error);
       }
       outputAudioRef.current = { audioContext: null, nextStartTime: 0, sources: new Set() };
   }, []);
+  
+  const silentCleanup = useCallback(() => {
+    if (sessionPromiseRef.current) {
+        sessionPromiseRef.current.then(session => session.close()).catch(console.error);
+        sessionPromiseRef.current = null;
+    }
+    cleanupAudio();
+  }, [cleanupAudio]);
 
   const handleDisconnect = useCallback(() => {
     if (sessionPromiseRef.current) {
-        sessionPromiseRef.current.then(session => session.close());
+        sessionPromiseRef.current.then(session => session.close()).catch(console.error);
         sessionPromiseRef.current = null;
     }
     cleanupAudio();
     setConnectionState('IDLE');
   }, [cleanupAudio]);
 
-  const handleConnect = async () => {
+  const connectWithNextKey = async () => {
+    if (keyIndexRef.current >= shuffledKeysRef.current.length) {
+      setErrorMessage('All API keys failed. Please check the keys and your network connection.');
+      setConnectionState('ERROR');
+      return;
+    }
+    
+    const currentApiKey = shuffledKeysRef.current[keyIndexRef.current];
     setConnectionState('CONNECTING');
+    setErrorMessage(`Attempting connection with key #${keyIndexRef.current + 1}...`);
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('Your browser does not support audio recording.');
+        setErrorMessage('Audio recording is not supported by your browser.');
         setConnectionState('ERROR');
         return;
     }
@@ -122,8 +149,7 @@ const TroubleRootingLab: React.FC = () => {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioResourcesRef.current.stream = stream;
 
-        // FIX: API key is now sourced from environment variables as per guidelines.
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey: currentApiKey });
 
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -137,7 +163,7 @@ const TroubleRootingLab: React.FC = () => {
             callbacks: {
                 onopen: () => {
                     setConnectionState('CONNECTED');
-                    // FIX: Added type assertion for window.webkitAudioContext to handle vendor prefixes for older browsers.
+                    setErrorMessage(null); // Clear attempt message
                     const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                     const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
                     const source = inputAudioContext.createMediaStreamSource(stream);
@@ -146,7 +172,6 @@ const TroubleRootingLab: React.FC = () => {
                     audioResourcesRef.current.scriptProcessor = scriptProcessor;
                     audioResourcesRef.current.source = source;
                     
-                    // FIX: Added type assertion for window.webkitAudioContext to handle vendor prefixes for older browsers.
                     outputAudioRef.current.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
                     scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
@@ -206,9 +231,10 @@ const TroubleRootingLab: React.FC = () => {
                     }
                 },
                 onerror: (e: ErrorEvent) => {
-                    console.error('Live session error:', e);
-                    setConnectionState('ERROR');
-                    handleDisconnect();
+                    console.error(`API Key #${keyIndexRef.current + 1} failed:`, e);
+                    silentCleanup();
+                    keyIndexRef.current++;
+                    setTimeout(connectWithNextKey, 100);
                 },
                 onclose: () => {
                     handleDisconnect();
@@ -218,9 +244,18 @@ const TroubleRootingLab: React.FC = () => {
 
     } catch (error) {
         console.error('Failed to start session:', error);
+        setErrorMessage(`Failed to start session. Please ensure your microphone is enabled. Error: ${error instanceof Error ? error.message : String(error)}`);
         setConnectionState('ERROR');
         cleanupAudio();
     }
+  };
+
+  const handleConnect = () => {
+    // Reset and shuffle keys for a new session attempt
+    keyIndexRef.current = 0;
+    shuffledKeysRef.current = [...API_KEYS].sort(() => 0.5 - Math.random());
+    setErrorMessage(null);
+    connectWithNextKey();
   };
 
   useEffect(() => {
@@ -234,10 +269,10 @@ const TroubleRootingLab: React.FC = () => {
   const renderStatus = () => {
     switch (connectionState) {
         case 'IDLE': return 'Press Start to connect...';
-        case 'CONNECTING': return 'Connecting to SHΞN™...';
+        case 'CONNECTING': return errorMessage || 'Connecting to SHΞN™...';
         case 'CONNECTED': return 'Connected. Start speaking.';
         case 'DISCONNECTED': return 'Disconnected. Press Start to reconnect.';
-        case 'ERROR': return 'Connection error. Please refresh and try again.';
+        case 'ERROR': return errorMessage || 'Connection error. Please refresh and try again.';
         default: return '';
     }
   }
