@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import type { ChatMessage, ContentPart } from '../types';
 import { MessageSender } from '../types';
@@ -84,7 +85,7 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message }) => {
     return (
       <div className="flex items-end gap-3 justify-start animation-slide-up">
         <ShenAvatar />
-        <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A] border border-[#FFA500]/30 p-4 rounded-2xl rounded-bl-lg">
+        <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#FFA500]/30 p-4 rounded-2xl rounded-bl-lg">
             <div className={`prose prose-invert prose-p:my-1 prose-a:text-[#FF6600] space-y-2 ${isTranscription ? 'text-gray-200/50' : 'text-gray-200'}`}>
               {message.parts.map(renderPart)}
             </div>

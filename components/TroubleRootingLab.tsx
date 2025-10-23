@@ -6,6 +6,8 @@ import { MessageSender } from '../types';
 import ChatMessageComponent from './ChatMessage';
 import { SYSTEM_PROMPT, availableTools } from '../constants';
 import { createBlob, decode, decodeAudioData } from '../utils/audio';
+import NetworkBackground from './NetworkBackground';
+import ThinkingIndicator from './ThinkingIndicator';
 
 type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
 type ActiveTool = 'UPLOAD' | 'DOWNLOAD' | null;
@@ -165,11 +167,11 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
                 onopen: () => {
                     setConnectionState('CONNECTED');
 
-                    // Nudge the bot to start speaking its intro
+                    // Automatically send a "Hello" to reliably trigger SHEN's
+                    // introductory greeting. This simulates the user starting the
+                    // conversation, which the model expects, ensuring an immediate response.
                     sessionPromiseRef.current?.then((session) => {
-                        const silentData = new Float32Array(1024).fill(0);
-                        const silentPcmBlob = createBlob(silentData);
-                        session.sendRealtimeInput({ media: silentPcmBlob });
+                        session.sendRealtimeInput({ text: 'سلام' });
                     });
 
                     const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
@@ -276,7 +278,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             if (uploadedFileName) {
                 return (
                     <div className="flex justify-center p-4 animation-slide-up">
-                        <div className="w-full max-w-md bg-[#1A1A1A] border border-[#00FF00]/50 rounded-lg p-8 text-center text-[#00FF00]">
+                        <div className="w-full max-w-md bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#00FF00]/50 rounded-lg p-8 text-center text-[#00FF00]">
                             <p className="font-semibold">✅ آپلود موفقیت آمیز بود</p>
                             <p className="text-xs text-gray-400 mt-1 break-all">{uploadedFileName}</p>
                         </div>
@@ -285,7 +287,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             }
             return (
                 <div className="flex justify-center p-4 animation-slide-up">
-                    <label htmlFor="file-upload" className="cursor-pointer w-full max-w-md bg-[#1A1A1A] border-2 border-dashed border-[#FFA500]/50 rounded-lg p-8 text-center hover:border-[#FFA500] transition-colors">
+                    <label htmlFor="file-upload" className="cursor-pointer w-full max-w-md bg-[#1A1A1A]/80 backdrop-blur-sm border-2 border-dashed border-[#FFA500]/50 rounded-lg p-8 text-center hover:border-[#FFA500] transition-colors">
                         <div className="flex flex-col items-center justify-center">
                             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#FFA500]/70 mb-4">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -314,69 +316,76 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
   const isSessionActive = connectionState === 'CONNECTED';
   const isConnecting = connectionState === 'CONNECTING';
 
-  if (!isSessionActive) {
-    return (
-        <div className="flex flex-col h-screen max-w-3xl mx-auto p-4 text-center justify-between">
-            <header className="p-4">
-                <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
-                <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
-            </header>
-            <main className="flex flex-col items-center justify-center flex-1">
+  return (
+    <div className="relative w-full h-screen overflow-hidden">
+      <NetworkBackground />
+      
+      {!isSessionActive ? (
+        <div className="relative flex flex-col h-screen max-w-3xl mx-auto p-4 text-center justify-between z-10">
+          <header className="p-4">
+            <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
+            <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
+          </header>
+          <main className="flex flex-col items-center justify-center flex-1">
+            {isConnecting ? (
+                <ThinkingIndicator />
+            ) : (
                 <button
                     onClick={startSession}
-                    disabled={isConnecting}
-                    className="w-24 h-24 rounded-full bg-[#FFA500] text-[#050505] flex items-center justify-center transition-all duration-300 ease-in-out hover:scale-110 disabled:scale-100 disabled:bg-[#FFA500]/50 animate-pulse disabled:animate-none"
+                    className="w-24 h-24 rounded-full bg-[#FFA500] text-[#050505] flex items-center justify-center transition-all duration-300 ease-in-out hover:scale-110"
                     aria-label="Start Session"
                 >
                     <MicrophoneIcon />
                 </button>
-            </main>
-            <footer className="h-12">
-                <p className="text-sm text-[#FFA500]/70 mb-2">
-                    {connectionState === 'IDLE' && 'برای شروع روی میکروفون ضربه بزنید'}
-                    {isConnecting && 'در حال اتصال...'}
-                    {connectionState === 'ERROR' && (errorMessage || 'خطا در اتصال')}
-                    {connectionState === 'DISCONNECTED' && 'جلسه به پایان رسید. برای شروع مجدد ضربه بزنید'}
-                </p>
-            </footer>
+            )}
+          </main>
+          <footer className="h-20 flex flex-col justify-end items-center">
+            <p className="text-sm text-[#FFA500]/70 mb-2">
+                {connectionState === 'IDLE' && 'برای شروع روی میکروفون ضربه بزنید'}
+                {isConnecting && ''}
+                {connectionState === 'ERROR' && (errorMessage || 'خطا در اتصال')}
+                {connectionState === 'DISCONNECTED' && 'جلسه به پایان رسید. برای شروع مجدد ضربه بزنید'}
+            </p>
+            <p className="text-xs text-amber-500/60 font-mono">Exclusive ☬SHΞN™ made</p>
+          </footer>
         </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-screen max-w-3xl mx-auto p-4">
-      <header className="text-center p-4 border-b border-[#FFA500]/20 flex-shrink-0">
-        <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
-        <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
-      </header>
-      <main className="flex-1 overflow-y-auto py-4 pr-2">
-        <div className="space-y-6">
-          {chatHistory.filter(msg => msg.sender === MessageSender.Shen).map((msg) => (
-            <ChatMessageComponent key={msg.id} message={msg} />
-          ))}
-          {currentOutputTranscription && (
-               <ChatMessageComponent message={{id: 'transcription', sender: MessageSender.Shen, parts: [{type: 'text', content: currentOutputTranscription}]}} />
-          )}
-          {renderTool()}
-          <div ref={chatEndRef} />
+      ) : (
+        <div className="relative flex flex-col h-screen max-w-3xl mx-auto p-4 z-10">
+          <header className="text-center p-4 border-b border-[#FFA500]/20 flex-shrink-0">
+            <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
+            <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
+          </header>
+          <main className="flex-1 overflow-y-auto py-4 pr-2">
+            <div className="space-y-6">
+              {chatHistory.filter(msg => msg.sender === MessageSender.Shen).map((msg) => (
+                <ChatMessageComponent key={msg.id} message={msg} />
+              ))}
+              {currentOutputTranscription && (
+                   <ChatMessageComponent message={{id: 'transcription', sender: MessageSender.Shen, parts: [{type: 'text', content: currentOutputTranscription}]}} />
+              )}
+              {renderTool()}
+              <div ref={chatEndRef} />
+            </div>
+          </main>
+          <footer className="pt-4 border-t border-[#FFA500]/20 flex-shrink-0 flex flex-col items-center justify-center">
+            {isTextInputVisible ? (
+                 <form onSubmit={handleTextSubmit} className="w-full flex items-center gap-2 p-2">
+                    <input type="text" placeholder="پیام خود را تایپ کنید..." className="flex-1 bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#FFA500]/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]"/>
+                    <button type="submit" className="px-4 py-2 bg-[#FFA500] text-[#050505] rounded-lg font-bold">ارسال</button>
+                 </form>
+            ) : (
+                <button
+                    onClick={handleDisconnect}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${connectionState === 'CONNECTED' ? 'bg-red-500/80 text-white' : 'bg-[#FFA500]/50 text-gray-300'}`}
+                    aria-label="End Session"
+                  >
+                    <MicrophoneIcon />
+                </button>
+            )}
+            <p className="text-xs text-amber-500/60 font-mono mt-4">Exclusive ☬SHΞN™ made</p>
+          </footer>
         </div>
-      </main>
-      <footer className="pt-4 border-t border-[#FFA500]/20 flex-shrink-0 flex flex-col items-center justify-center">
-        {isTextInputVisible ? (
-             <form onSubmit={handleTextSubmit} className="w-full flex items-center gap-2 p-2">
-                <input type="text" placeholder="پیام خود را تایپ کنید..." className="flex-1 bg-[#1A1A1A] border border-[#FFA500]/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]"/>
-                <button type="submit" className="px-4 py-2 bg-[#FFA500] text-[#050505] rounded-lg font-bold">ارسال</button>
-             </form>
-        ) : (
-            <button
-                onClick={handleDisconnect}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${connectionState === 'CONNECTED' ? 'bg-red-500/80 text-white' : 'bg-[#FFA500]/50 text-gray-300'}`}
-                aria-label="End Session"
-              >
-                <MicrophoneIcon />
-            </button>
-        )}
-      </footer>
+      )}
     </div>
   );
 };
