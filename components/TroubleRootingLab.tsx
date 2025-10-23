@@ -6,7 +6,6 @@ import { MessageSender } from '../types';
 import ChatMessageComponent from './ChatMessage';
 import { SYSTEM_PROMPT, availableTools } from '../constants';
 import { createBlob, decode, decodeAudioData } from '../utils/audio';
-import NetworkBackground from './NetworkBackground';
 import ThinkingIndicator from './ThinkingIndicator';
 
 type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
@@ -318,8 +317,6 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
 
   return (
     <div className="relative w-full h-screen overflow-hidden">
-      <NetworkBackground />
-      
       {!isSessionActive ? (
         <div className="relative flex flex-col h-screen max-w-3xl mx-auto p-4 text-center justify-between z-10">
           <header className="p-4">
