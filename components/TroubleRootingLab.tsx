@@ -181,7 +181,7 @@ const TroubleRootingLab: React.FC = () => {
                     }
 
                     // Handle audio output
-                    const base64Audio = message.serverContent?.modelTurn?.parts[0]?.inlineData.data;
+                    const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
                     const outCtx = outputAudioRef.current.audioContext;
                     if (base64Audio && outCtx) {
                         outputAudioRef.current.nextStartTime = Math.max(outputAudioRef.current.nextStartTime, outCtx.currentTime);
