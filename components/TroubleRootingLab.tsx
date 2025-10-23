@@ -11,10 +11,8 @@ import ThinkingIndicator from './ThinkingIndicator';
 type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
 type ActiveTool = 'UPLOAD' | 'DOWNLOAD' | null;
 
-interface TroubleRootingLabProps {
-  apiKey: string;
-  onInvalidApiKey: () => void;
-}
+// Fix: Removed apiKey and onInvalidApiKey from props as they are no longer needed.
+interface TroubleRootingLabProps {}
 
 const parseTranscriptToParts = (text: string): ContentPart[] => {
     if (!text) return [];
@@ -58,7 +56,8 @@ const MicrophoneIcon = () => (
     </svg>
 );
 
-const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalidApiKey }) => {
+// Fix: Removed props from component signature as they are no longer needed.
+const TroubleRootingLab: React.FC<TroubleRootingLabProps> = () => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('IDLE');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -74,7 +73,8 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
   const audioResourcesRef = useRef<{ stream: MediaStream | null; audioContext: AudioContext | null; scriptProcessor: ScriptProcessorNode | null; source: MediaStreamAudioSourceNode | null; }>({ stream: null, audioContext: null, scriptProcessor: null, source: null });
   const outputAudioRef = useRef<{ audioContext: AudioContext | null; nextStartTime: number; sources: Set<AudioBufferSourceNode>; }>({ audioContext: null, nextStartTime: 0, sources: new Set() });
 
-  const ai = useMemo(() => new GoogleGenAI({ apiKey }), [apiKey]);
+  // Fix: Initialize GoogleGenAI with process.env.API_KEY as per coding guidelines.
+  const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.API_KEY! }), []);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -157,234 +157,243 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             config: {
                 responseModalities: [Modality.AUDIO],
-                speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' }}},
-                systemInstruction: SYSTEM_PROMPT,
                 outputAudioTranscription: {},
-                tools: [availableTools]
+                inputAudioTranscription: {},
+                speechConfig: {
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                },
+                tools: [availableTools],
+                systemInstruction: SYSTEM_PROMPT,
             },
             callbacks: {
                 onopen: () => {
                     setConnectionState('CONNECTED');
 
-                    // Automatically send a "Hello" to reliably trigger SHEN's
-                    // introductory greeting. This simulates the user starting the
-                    // conversation, which the model expects, ensuring an immediate response.
-                    sessionPromiseRef.current?.then((session) => {
-                        session.sendRealtimeInput({ text: 'سلام' });
-                    });
-
                     const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-                    const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
-                    const source = inputAudioContext.createMediaStreamSource(stream);
-
                     audioResourcesRef.current.audioContext = inputAudioContext;
-                    audioResourcesRef.current.scriptProcessor = scriptProcessor;
-                    audioResourcesRef.current.source = source;
+
                     outputAudioRef.current.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+                    
+                    const source = inputAudioContext.createMediaStreamSource(stream);
+                    audioResourcesRef.current.source = source;
+                    const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
+                    audioResourcesRef.current.scriptProcessor = scriptProcessor;
 
                     scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
                         const inputData = audioProcessingEvent.inputBuffer.getChannelData(0);
                         const pcmBlob = createBlob(inputData);
                         sessionPromiseRef.current?.then((session) => {
-                          session.sendRealtimeInput({ media: pcmBlob });
+                            session.sendRealtimeInput({ media: pcmBlob });
                         });
                     };
                     source.connect(scriptProcessor);
                     scriptProcessor.connect(inputAudioContext.destination);
                 },
                 onmessage: async (message: LiveServerMessage) => {
+                    if (message.serverContent?.outputTranscription?.text) {
+                        setCurrentOutputTranscription(prev => prev + message.serverContent!.outputTranscription!.text);
+                    }
+                    
+                    const base64EncodedAudioString = message.serverContent?.modelTurn?.parts[0]?.inlineData.data;
+                    if (base64EncodedAudioString && outputAudioRef.current.audioContext) {
+                        const ctx = outputAudioRef.current.audioContext;
+                        let nextStartTime = Math.max(outputAudioRef.current.nextStartTime, ctx.currentTime);
+                        
+                        const audioBuffer = await decodeAudioData(decode(base64EncodedAudioString), ctx, 24000, 1);
+                        const source = ctx.createBufferSource();
+                        source.buffer = audioBuffer;
+                        source.connect(ctx.destination);
+                        
+                        source.addEventListener('ended', () => {
+                            outputAudioRef.current.sources.delete(source);
+                        });
+                        
+                        source.start(nextStartTime);
+                        outputAudioRef.current.nextStartTime = nextStartTime + audioBuffer.duration;
+                        outputAudioRef.current.sources.add(source);
+                    }
+
                     if (message.toolCall) {
                         message.toolCall.functionCalls.forEach(handleToolCall);
                     }
-                    if (message.serverContent?.outputTranscription) {
-                        setCurrentOutputTranscription(prev => prev + message.serverContent.outputTranscription.text);
-                    }
+
                     if (message.serverContent?.turnComplete) {
-                        const finalOutput = currentOutputTranscription + (message.serverContent.outputTranscription?.text || '');
-                        if (finalOutput.trim()) {
-                            setChatHistory(prev => [
-                                ...prev,
-                                { id: `shen-${Date.now()}`, sender: MessageSender.Shen, parts: parseTranscriptToParts(finalOutput) }
-                            ]);
+                        if (currentOutputTranscription) {
+                            setChatHistory(prev => [...prev, {
+                                sender: MessageSender.Shen,
+                                parts: parseTranscriptToParts(currentOutputTranscription),
+                                id: Date.now().toString(),
+                            }]);
+                            setCurrentOutputTranscription('');
                         }
-                        setCurrentOutputTranscription('');
                     }
 
-                    const base64Audio = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                    const outCtx = outputAudioRef.current.audioContext;
-                    if (base64Audio && outCtx) {
-                        outputAudioRef.current.nextStartTime = Math.max(outputAudioRef.current.nextStartTime, outCtx.currentTime);
-                        const audioBuffer = await decodeAudioData(decode(base64Audio), outCtx, 24000, 1);
-                        const source = outCtx.createBufferSource();
-                        source.buffer = audioBuffer;
-                        source.connect(outCtx.destination);
-                        const currentSources = outputAudioRef.current.sources;
-                        source.addEventListener('ended', () => { currentSources.delete(source); });
-                        source.start(outputAudioRef.current.nextStartTime);
-                        outputAudioRef.current.nextStartTime += audioBuffer.duration;
-                        currentSources.add(source);
-                    }
-                    
-                    if(message.serverContent?.interrupted) {
-                        outputAudioRef.current.sources.forEach(s => s.stop());
+                    const interrupted = message.serverContent?.interrupted;
+                    if (interrupted) {
+                        outputAudioRef.current.sources.forEach(source => source.stop());
                         outputAudioRef.current.sources.clear();
                         outputAudioRef.current.nextStartTime = 0;
                     }
                 },
-                onerror: (e: ErrorEvent) => {
-                    console.error('API connection failed:', e);
+                onerror: (e: any) => {
+                    console.error('Session error:', e);
+                    setErrorMessage(`An error occurred: ${e.message}`);
+                    setConnectionState('ERROR');
                     handleDisconnect();
-                    onInvalidApiKey();
                 },
                 onclose: () => {
+                    console.log('Session closed.');
                     handleDisconnect();
                 },
             },
         });
-
-    } catch (error) {
-        console.error('Failed to start session:', error);
-        setErrorMessage(`Failed to start session. Please ensure your microphone is enabled. Error: ${error instanceof Error ? error.message : String(error)}`);
+        await sessionPromiseRef.current;
+    } catch (error: any) {
+        // Fix: Removed onInvalidApiKey call as API key management UI is removed.
+        console.error('Session setup failed:', error);
+        setErrorMessage(`Connection failed: ${error.message}`);
         setConnectionState('ERROR');
-        cleanupAudio();
     }
   };
   
-  const handleTextSubmit = (e: React.FormEvent) => {
-      e.preventDefault();
-      alert("Text input is a placeholder in this demo.");
-      setTextInputVisible(false);
-  }
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-        setUploadedFileName(file.name);
-        setTimeout(() => {
-            setActiveTool(null);
-            setUploadedFileName(null);
-        }, 4000);
+  const handleTextSubmit = (text: string) => {
+    if (text.trim() && sessionPromiseRef.current) {
+      sessionPromiseRef.current.then(session => {
+        session.sendText(text.trim());
+        setTextInputVisible(false);
+      });
     }
   };
+  
+  const handleFileUpload = (file: File) => {
+    if (file && sessionPromiseRef.current) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const base64Data = (e.target?.result as string).split(',')[1];
+        sessionPromiseRef.current?.then(session => {
+          session.sendRealtimeInput({ media: { data: base64Data, mimeType: file.type }});
+          setUploadedFileName(file.name);
+          setActiveTool(null);
+        })
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
 
   useEffect(() => {
-    return () => { handleDisconnect(); };
+    return () => {
+        handleDisconnect();
+    };
   }, [handleDisconnect]);
 
-  const renderTool = () => {
-    switch (activeTool) {
-        case 'UPLOAD':
-            if (uploadedFileName) {
-                return (
-                    <div className="flex justify-center p-4 animation-slide-up">
-                        <div className="w-full max-w-md bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#00FF00]/50 rounded-lg p-8 text-center text-[#00FF00]">
-                            <p className="font-semibold">✅ آپلود موفقیت آمیز بود</p>
-                            <p className="text-xs text-gray-400 mt-1 break-all">{uploadedFileName}</p>
-                        </div>
-                    </div>
-                );
-            }
+  const renderConnectionButton = () => {
+    switch (connectionState) {
+        case 'IDLE':
+        case 'DISCONNECTED':
+        case 'ERROR':
             return (
-                <div className="flex justify-center p-4 animation-slide-up">
-                    <label htmlFor="file-upload" className="cursor-pointer w-full max-w-md bg-[#1A1A1A]/80 backdrop-blur-sm border-2 border-dashed border-[#FFA500]/50 rounded-lg p-8 text-center hover:border-[#FFA500] transition-colors">
-                        <div className="flex flex-col items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#FFA500]/70 mb-4">
-                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                <polyline points="17 8 12 3 7 8"></polyline>
-                                <line x1="12" y1="3" x2="12" y2="15"></line>
-                            </svg>
-                            <p className="font-semibold text-[#FFA500]">برای آپلود فایل اینجا کلیک کنید</p>
-                            <p className="text-xs text-gray-400 mt-1">یا فایل خود را بکشید و در اینجا رها کنید</p>
-                        </div>
-                        <input id="file-upload" type="file" className="hidden" onChange={handleFileSelect} />
-                    </label>
-                </div>
-            );
-        case 'DOWNLOAD':
-            return (
-                 <div className="flex justify-center p-4 animation-slide-up">
-                    <a href={downloadInfo?.url} download={downloadInfo?.filename} className="px-6 py-2 bg-[#FFA500] text-[#050505] rounded-md hover:bg-[#FF6600] transition-colors font-bold">
-                        Download {downloadInfo?.filename}
-                    </a>
-                </div>
-            )
-        default: return null;
-    }
-  }
-  
-  const isSessionActive = connectionState === 'CONNECTED';
-  const isConnecting = connectionState === 'CONNECTING';
-
-  return (
-    <div className="relative w-full h-screen overflow-hidden">
-      {!isSessionActive ? (
-        <div className="relative flex flex-col h-screen max-w-3xl mx-auto p-4 text-center justify-between z-10">
-          <header className="p-4">
-            <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
-            <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
-          </header>
-          <main className="flex flex-col items-center justify-center flex-1">
-            {isConnecting ? (
-                <ThinkingIndicator />
-            ) : (
                 <button
                     onClick={startSession}
-                    className="w-24 h-24 rounded-full bg-[#FFA500] text-[#050505] flex items-center justify-center transition-all duration-300 ease-in-out hover:scale-110"
-                    aria-label="Start Session"
+                    className="flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-[#FFA500] text-[#050505] font-bold text-lg shadow-lg shadow-[#FFA500]/30 hover:bg-[#FF6600] transition-all transform hover:scale-105"
                 >
                     <MicrophoneIcon />
+                    Start Session
                 </button>
-            )}
-          </main>
-          <footer className="h-20 flex flex-col justify-end items-center">
-            <p className="text-sm text-[#FFA500]/70 mb-2">
-                {connectionState === 'IDLE' && 'برای شروع روی میکروفون ضربه بزنید'}
-                {isConnecting && ''}
-                {connectionState === 'ERROR' && (errorMessage || 'خطا در اتصال')}
-                {connectionState === 'DISCONNECTED' && 'جلسه به پایان رسید. برای شروع مجدد ضربه بزنید'}
-            </p>
-            <p className="text-xs text-amber-500/60 font-mono">Exclusive ☬SHΞN™ made</p>
-          </footer>
-        </div>
-      ) : (
-        <div className="relative flex flex-col h-screen max-w-3xl mx-auto p-4 z-10">
-          <header className="text-center p-4 border-b border-[#FFA500]/20 flex-shrink-0">
-            <h1 className="text-2xl font-bold text-[#FFA500]">SHΞN™</h1>
-            <p className="text-sm text-[#FF6600]">TroubleRooting Lab</p>
-          </header>
-          <main className="flex-1 overflow-y-auto py-4 pr-2">
-            <div className="space-y-6">
-              {chatHistory.filter(msg => msg.sender === MessageSender.Shen).map((msg) => (
-                <ChatMessageComponent key={msg.id} message={msg} />
-              ))}
-              {currentOutputTranscription && (
-                   <ChatMessageComponent message={{id: 'transcription', sender: MessageSender.Shen, parts: [{type: 'text', content: currentOutputTranscription}]}} />
-              )}
-              {renderTool()}
-              <div ref={chatEndRef} />
-            </div>
-          </main>
-          <footer className="pt-4 border-t border-[#FFA500]/20 flex-shrink-0 flex flex-col items-center justify-center">
-            {isTextInputVisible ? (
-                 <form onSubmit={handleTextSubmit} className="w-full flex items-center gap-2 p-2">
-                    <input type="text" placeholder="پیام خود را تایپ کنید..." className="flex-1 bg-[#1A1A1A]/80 backdrop-blur-sm border border-[#FFA500]/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]"/>
-                    <button type="submit" className="px-4 py-2 bg-[#FFA500] text-[#050505] rounded-lg font-bold">ارسال</button>
-                 </form>
-            ) : (
-                <button
+            );
+        case 'CONNECTING':
+            return (
+                <div className="text-center">
+                    <p className="text-lg animate-pulse">Connecting to SHΞN™...</p>
+                    <p className="text-sm text-gray-400">Please allow microphone access</p>
+                </div>
+            );
+        case 'CONNECTED':
+            return (
+                 <button
                     onClick={handleDisconnect}
-                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${connectionState === 'CONNECTED' ? 'bg-transparent border-2 border-green-500 text-green-500 hover:bg-green-500/10' : 'bg-[#FFA500]/50 text-gray-300'}`}
-                    aria-label="End Session"
-                  >
+                    className="flex items-center justify-center gap-2 px-6 py-3 rounded-full bg-red-600 text-white font-bold text-lg shadow-lg shadow-red-500/30 hover:bg-red-700 transition-all transform hover:scale-105"
+                >
                     <MicrophoneIcon />
+                    End Session
                 </button>
+            );
+    }
+  };
+
+
+  return (
+    <div className="flex flex-col h-full w-full max-w-4xl mx-auto p-4">
+        <header className="text-center py-4 border-b border-[#FFA500]/20">
+            <h1 className="text-4xl font-bold text-[#FFA500]">SHΞN™</h1>
+            <p className="text-[#FF6600]">TroubleRooting Lab</p>
+        </header>
+        
+        <div className="flex-grow overflow-y-auto p-4 space-y-6 scrollbar-thin scrollbar-thumb-[#FFA500]/50 scrollbar-track-transparent">
+            {chatHistory.map((msg) => <ChatMessageComponent key={msg.id} message={msg} />)}
+            {currentOutputTranscription && (
+                <ChatMessageComponent message={{ sender: MessageSender.Shen, parts: [{ type: 'text', content: currentOutputTranscription }], id: 'transcription' }} />
             )}
-            <p className="text-xs text-amber-500/60 font-mono mt-4">Exclusive ☬SHΞN™ made</p>
-          </footer>
+
+            {activeTool === 'UPLOAD' && (
+                <div className="flex justify-center">
+                    <div className="bg-[#1A1A1A]/80 border border-[#FFA500]/30 p-4 rounded-lg text-center">
+                        <p className="mb-2">Please upload your file:</p>
+                        {uploadedFileName ? (
+                            <p className="text-green-400">Uploaded: {uploadedFileName}</p>
+                        ) : (
+                            <input type="file" onChange={(e) => e.target.files && handleFileUpload(e.target.files[0])}
+                            className="text-sm text-slate-500
+                                file:mr-4 file:py-2 file:px-4
+                                file:rounded-full file:border-0
+                                file:text-sm file:font-semibold
+                                file:bg-violet-50 file:text-[#FFA500]
+                                hover:file:bg-violet-100" />
+                        )}
+                        <button onClick={() => setActiveTool(null)} className="mt-2 text-xs text-gray-400 hover:text-white">Cancel</button>
+                    </div>
+                </div>
+            )}
+
+            {activeTool === 'DOWNLOAD' && downloadInfo && (
+                <div className="flex justify-center">
+                    <div className="bg-[#1A1A1A]/80 border border-[#FFA500]/30 p-4 rounded-lg text-center">
+                        <p className="mb-2">A file is ready for you:</p>
+                        <a href={downloadInfo.url} download={downloadInfo.filename} className="inline-block bg-[#FFA500] text-[#050505] font-bold px-4 py-2 rounded-md hover:bg-[#FF6600] transition-colors">
+                            Download {downloadInfo.filename}
+                        </a>
+                        <button onClick={() => setActiveTool(null)} className="mt-2 text-xs text-gray-400 hover:text-white">Dismiss</button>
+                    </div>
+                </div>
+            )}
+
+            {connectionState === 'CONNECTING' && <ThinkingIndicator />}
+            <div ref={chatEndRef} />
         </div>
-      )}
+        
+        <footer className="py-4 text-center">
+             {errorMessage && <p className="text-red-400 mb-4">{errorMessage}</p>}
+
+            {isTextInputVisible && (
+                <form onSubmit={(e) => {
+                    e.preventDefault();
+                    const input = (e.target as HTMLFormElement).elements.namedItem('text-input') as HTMLInputElement;
+                    handleTextSubmit(input.value);
+                    input.value = '';
+                }} className="flex gap-2 mb-4">
+                    <input name="text-input" type="text" placeholder="Type your message..." className="flex-grow bg-[#050505] border border-[#FFA500]/50 rounded-lg px-4 py-2 text-[#FFA500] focus:outline-none focus:ring-1 focus:ring-[#FF6600]" />
+                    <button type="submit" className="bg-[#FFA500] text-[#050505] px-4 py-2 rounded-lg font-bold hover:bg-[#FF6600]">Send</button>
+                    <button type="button" onClick={() => setTextInputVisible(false)} className="text-gray-400 hover:text-white">Cancel</button>
+                </form>
+            )}
+
+            <div className="flex justify-center">
+                {renderConnectionButton()}
+            </div>
+        </footer>
     </div>
   );
 };
 
+// Fix: Add default export to resolve the import error in App.tsx
 export default TroubleRootingLab;

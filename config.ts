@@ -4,4 +4,7 @@ export const FALLBACK_API_KEYS = [
   'AIzaSyCPps07WLQK4q1lWxtTVglN8ua8JzCEGoY',
   'AIzaSyA_RZu4dt5BtGnolFYkzoxniANwIP5K6T4',
   'AIzaSyB-_CsOVF-VA_aV9_FhTi0L1Xnp_M3X0uM',
+  'AIzaSyB_IRzaiGXe2ESXJW6pyI8Fyvd04qHlXPE',
+  'AIzaSyAm0ilAgYOkdGXwiLO8rIVSz_UJvyh5pVs',
+  'AIzaSyBke9bVSN6kaNRviMMjS8AByknCq4maDrw',
 ];

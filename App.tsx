@@ -1,71 +1,20 @@
 
-import React, { useState, useEffect } from 'react';
-import { GoogleGenAI } from '@google/genai';
+import React from 'react';
+// Fix: Removed component that is no longer used for API key setup.
+// The app now relies on environment variables for the API key.
 import TroubleRootingLab from './components/TroubleRootingLab';
-import ApiKeySetup from './components/ApiKeySetup';
-
-const API_KEY_STORAGE_KEY = 'gemini-api-key';
+import NetworkBackground from './components/NetworkBackground';
 
 const App: React.FC = () => {
-  const [apiKey, setApiKey] = useState<string | null>(null);
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
-  const [keyError, setKeyError] = useState(false);
-
-  useEffect(() => {
-    try {
-      const storedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
-      if (storedKey) {
-        setApiKey(storedKey);
-      }
-    } catch (error) {
-      console.error("Could not access local storage:", error);
-    } finally {
-      setIsLoaded(true);
-    }
-  }, []);
-
-  const handleApiKeySet = async (key: string) => {
-    setIsValidating(true);
-    setKeyError(false);
-    try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: 'ping',
-      });
-      
-      localStorage.setItem(API_KEY_STORAGE_KEY, key);
-      setApiKey(key);
-    } catch (error) {
-      console.error("API Key validation failed:", error);
-      setKeyError(true);
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
-  const handleInvalidApiKey = () => {
-    try {
-      localStorage.removeItem(API_KEY_STORAGE_KEY);
-      setApiKey(null);
-      setKeyError(true);
-    } catch (error) {
-       console.error("Could not remove item from local storage:", error);
-    }
-  };
-  
-  if (!isLoaded) {
-    return null; // Or a loading spinner
-  }
-
-  if (!apiKey) {
-    return <ApiKeySetup onApiKeySet={handleApiKeySet} error={keyError} loading={isValidating} />;
-  }
-
+  // Fix: Removed all state and logic related to manual API key input,
+  // validation, and storage to adhere to the project's guidelines.
+  // The application now renders the main lab component directly.
   return (
-    <div className="text-[#FFA500] min-h-screen font-mono">
-      <TroubleRootingLab apiKey={apiKey} onInvalidApiKey={handleInvalidApiKey} />
+    <div className="relative w-full h-screen overflow-hidden font-mono text-[#FFA500]">
+      <NetworkBackground />
+      <div className="relative z-10 w-full h-full">
+          <TroubleRootingLab />
+      </div>
     </div>
   );
 };
