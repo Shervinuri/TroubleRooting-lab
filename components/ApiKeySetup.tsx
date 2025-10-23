@@ -1,5 +1,4 @@
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { FALLBACK_API_KEYS } from '../config';
 
 interface ApiKeySetupProps {
@@ -10,8 +9,8 @@ interface ApiKeySetupProps {
 
 const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onApiKeySet, error, loading }) => {
   const [key, setKey] = useState('');
-  const [clickCount, setClickCount] = useState(0);
-  const timeoutRef = useRef<number | null>(null);
+  const clickCountRef = useRef(0);
+  const clickTimeoutRef = useRef<number | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,49 +19,33 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onApiKeySet, error, loading }
     }
   };
 
-  const handleUseFallbackKey = () => {
-    const randomKey = FALLBACK_API_KEYS[Math.floor(Math.random() * FALLBACK_API_KEYS.length)];
-    onApiKeySet(randomKey);
-  };
-  
   const handleTitleClick = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
     }
-    const newCount = clickCount + 1;
-    setClickCount(newCount);
 
-    if (newCount >= 5) {
-      handleUseFallbackKey();
-      setClickCount(0); // Reset after activation
+    clickCountRef.current += 1;
+
+    if (clickCountRef.current >= 5) {
+      const randomKey = FALLBACK_API_KEYS[Math.floor(Math.random() * FALLBACK_API_KEYS.length)];
+      onApiKeySet(randomKey);
+      clickCountRef.current = 0; 
     } else {
-      // Reset the counter if the user doesn't click again within 1.5 seconds
-      timeoutRef.current = window.setTimeout(() => {
-        setClickCount(0);
-      }, 1500);
+      clickTimeoutRef.current = window.setTimeout(() => {
+        clickCountRef.current = 0;
+      }, 2000); 
     }
   };
-  
-  // Cleanup timeout on component unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
-
 
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="w-full max-w-md p-8 space-y-6 border border-[#FFA500]/30 rounded-lg shadow-lg shadow-[#FFA500]/10">
         <div className="text-center">
           <h1 
-            onClick={handleTitleClick} 
             className="text-3xl font-bold text-[#FFA500] cursor-pointer"
-            style={{ userSelect: 'none' }}
-            title="Secret Entrance"
-            >
+            onClick={handleTitleClick}
+            title="Click 5 times for a fallback key"
+          >
               SHΞN™
           </h1>
           <p className="text-[#FF6600]">TroubleRooting Lab</p>
