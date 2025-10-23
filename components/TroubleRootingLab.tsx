@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import type { ChatMessage, ContentPart } from '../types';
@@ -8,6 +9,11 @@ import { createBlob, decode, decodeAudioData } from '../utils/audio';
 
 type ConnectionState = 'IDLE' | 'CONNECTING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
 type ActiveTool = 'UPLOAD' | 'DOWNLOAD' | null;
+
+interface TroubleRootingLabProps {
+  apiKey: string;
+  onInvalidApiKey: () => void;
+}
 
 const parseTranscriptToParts = (text: string): ContentPart[] => {
     if (!text) return [];
@@ -51,7 +57,7 @@ const MicrophoneIcon = () => (
     </svg>
 );
 
-const TroubleRootingLab: React.FC = () => {
+const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalidApiKey }) => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [connectionState, setConnectionState] = useState<ConnectionState>('IDLE');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -150,8 +156,7 @@ const TroubleRootingLab: React.FC = () => {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioResourcesRef.current.stream = stream;
 
-        // Fix: Use process.env.API_KEY as per guidelines.
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const ai = new GoogleGenAI({ apiKey });
 
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
@@ -224,11 +229,10 @@ const TroubleRootingLab: React.FC = () => {
                     }
                 },
                 onerror: (e: ErrorEvent) => {
-                    // Fix: Removed key retry logic. Set error state directly.
                     console.error('API connection failed:', e);
                     silentCleanup();
-                    setErrorMessage('Failed to connect. Please check your API key and network connection.');
-                    setConnectionState('ERROR');
+                    // Assume any connection error is a key issue and trigger the callback
+                    onInvalidApiKey();
                 },
                 onclose: () => {
                     handleDisconnect();
@@ -242,12 +246,6 @@ const TroubleRootingLab: React.FC = () => {
         setConnectionState('ERROR');
         cleanupAudio();
     }
-  };
-
-  const handleConnect = () => {
-    // Fix: Removed key management logic.
-    setErrorMessage(null);
-    startSession();
   };
   
   const handleTextSubmit = (e: React.FormEvent) => {
@@ -282,8 +280,8 @@ const TroubleRootingLab: React.FC = () => {
     }
   }
   
-  // Fix: Changed definition of isSessionActive to correctly handle the 'CONNECTING' state on the pre-connection UI.
   const isSessionActive = connectionState === 'CONNECTED';
+  const isConnecting = connectionState === 'CONNECTING';
 
   if (!isSessionActive) {
     return (
@@ -294,18 +292,18 @@ const TroubleRootingLab: React.FC = () => {
             </header>
             <main className="flex flex-col items-center justify-center flex-1">
                 <button
-                    onClick={handleConnect}
-                    disabled={connectionState === 'CONNECTING'}
+                    onClick={startSession}
+                    disabled={isConnecting}
                     className="w-24 h-24 rounded-full bg-[#FFA500] text-[#050505] flex items-center justify-center transition-all duration-300 ease-in-out hover:scale-110 disabled:scale-100 disabled:bg-[#FFA500]/50 animate-pulse disabled:animate-none"
+                    aria-label="Start Session"
                 >
                     <MicrophoneIcon />
                 </button>
             </main>
             <footer className="h-12">
                 <p className="text-sm text-[#FFA500]/70 mb-2">
-                    {/* Fix: Added a message for the 'CONNECTING' state. */}
                     {connectionState === 'IDLE' && 'Tap the microphone to start'}
-                    {connectionState === 'CONNECTING' && 'Connecting...'}
+                    {isConnecting && 'Connecting...'}
                     {connectionState === 'ERROR' && (errorMessage || 'Connection error')}
                     {connectionState === 'DISCONNECTED' && 'Session ended. Tap to restart'}
                 </p>
@@ -342,6 +340,7 @@ const TroubleRootingLab: React.FC = () => {
             <button
                 onClick={handleDisconnect}
                 className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${connectionState === 'CONNECTED' ? 'bg-red-500/80 text-white' : 'bg-[#FFA500]/50 text-gray-300'}`}
+                aria-label="End Session"
               >
                 <MicrophoneIcon />
             </button>

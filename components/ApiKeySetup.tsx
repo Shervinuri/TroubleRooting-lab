@@ -3,9 +3,10 @@ import React, { useState } from 'react';
 
 interface ApiKeySetupProps {
   onApiKeySet: (apiKey: string) => void;
+  error?: boolean;
 }
 
-const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onApiKeySet }) => {
+const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onApiKeySet, error }) => {
   const [key, setKey] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -36,6 +37,7 @@ const ApiKeySetup: React.FC<ApiKeySetupProps> = ({ onApiKeySet }) => {
               className="mt-1 block w-full px-3 py-2 bg-[#050505] border border-[#FFA500]/50 rounded-md text-[#FFA500] placeholder:text-[#FFA500]/40 focus:outline-none focus:ring-1 focus:ring-[#FF6600] focus:border-[#FF6600]"
               required
             />
+             {error && <p className="mt-2 text-xs text-red-400">The provided API key appears to be invalid. Please try again.</p>}
             <p className="mt-2 text-xs text-gray-400">
               Your key is stored only in your browser's local storage.
             </p>
