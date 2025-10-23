@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { GoogleGenAI } from '@google/genai';
 import TroubleRootingLab from './components/TroubleRootingLab';
 import ApiKeySetup from './components/ApiKeySetup';
 
@@ -7,7 +8,8 @@ const API_KEY_STORAGE_KEY = 'gemini-api-key';
 
 const App: React.FC = () => {
   const [apiKey, setApiKey] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
   const [keyError, setKeyError] = useState(false);
 
   useEffect(() => {
@@ -19,17 +21,27 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("Could not access local storage:", error);
     } finally {
-      setIsLoading(false);
+      setIsLoaded(true);
     }
   }, []);
 
-  const handleApiKeySet = (key: string) => {
+  const handleApiKeySet = async (key: string) => {
+    setIsValidating(true);
+    setKeyError(false);
     try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: 'ping',
+      });
+      
       localStorage.setItem(API_KEY_STORAGE_KEY, key);
       setApiKey(key);
-      setKeyError(false);
     } catch (error) {
-      console.error("Could not set item in local storage:", error);
+      console.error("API Key validation failed:", error);
+      setKeyError(true);
+    } finally {
+      setIsValidating(false);
     }
   };
 
@@ -43,12 +55,12 @@ const App: React.FC = () => {
     }
   };
   
-  if (isLoading) {
+  if (!isLoaded) {
     return null; // Or a loading spinner
   }
 
   if (!apiKey) {
-    return <ApiKeySetup onApiKeySet={handleApiKeySet} error={keyError} />;
+    return <ApiKeySetup onApiKeySet={handleApiKeySet} error={keyError} loading={isValidating} />;
   }
 
   return (

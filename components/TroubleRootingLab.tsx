@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import type { ChatMessage, ContentPart } from '../types';
 import { MessageSender } from '../types';
@@ -65,11 +65,15 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
   const [isTextInputVisible, setTextInputVisible] = useState(false);
   const [activeTool, setActiveTool] = useState<ActiveTool>(null);
   const [downloadInfo, setDownloadInfo] = useState<{url: string; filename: string} | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const sessionPromiseRef = useRef<Promise<any> | null>(null);
   const audioResourcesRef = useRef<{ stream: MediaStream | null; audioContext: AudioContext | null; scriptProcessor: ScriptProcessorNode | null; source: MediaStreamAudioSourceNode | null; }>({ stream: null, audioContext: null, scriptProcessor: null, source: null });
   const outputAudioRef = useRef<{ audioContext: AudioContext | null; nextStartTime: number; sources: Set<AudioBufferSourceNode>; }>({ audioContext: null, nextStartTime: 0, sources: new Set() });
+
+  const ai = useMemo(() => new GoogleGenAI({ apiKey }), [apiKey]);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -77,7 +81,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatHistory, currentOutputTranscription]);
+  }, [chatHistory, currentOutputTranscription, activeTool]);
   
   const cleanupAudio = useCallback(() => {
       audioResourcesRef.current.stream?.getTracks().forEach(track => track.stop());
@@ -95,14 +99,6 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
       }
       outputAudioRef.current = { audioContext: null, nextStartTime: 0, sources: new Set() };
   }, []);
-  
-  const silentCleanup = useCallback(() => {
-    if (sessionPromiseRef.current) {
-        sessionPromiseRef.current.then(session => session.close()).catch(console.error);
-        sessionPromiseRef.current = null;
-    }
-    cleanupAudio();
-  }, [cleanupAudio]);
 
   const handleDisconnect = useCallback(() => {
     if (sessionPromiseRef.current) {
@@ -122,6 +118,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
                 toolResponse.result = "Text input is now visible.";
                 break;
             case 'provide_upload_button':
+                setUploadedFileName(null);
                 setActiveTool('UPLOAD');
                 toolResponse.result = "Upload button is now visible.";
                 break;
@@ -131,12 +128,11 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
                 toolResponse.result = "Download link is now visible.";
                 break;
             case 'search_web':
-                // Simulate a search delay
                 setTimeout(() => {
                     const searchResult = { result: `Simulated search result for query: ${fc.args.query}` };
                     session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: searchResult } });
                 }, 2000);
-                return; // Don't send immediate response for async tool
+                return; 
         }
         session.sendToolResponse({ functionResponses: { id: fc.id, name: fc.name, response: toolResponse } });
     });
@@ -156,8 +152,6 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioResourcesRef.current.stream = stream;
 
-        const ai = new GoogleGenAI({ apiKey });
-
         sessionPromiseRef.current = ai.live.connect({
             model: 'gemini-2.5-flash-native-audio-preview-09-2025',
             config: {
@@ -170,6 +164,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             callbacks: {
                 onopen: () => {
                     setConnectionState('CONNECTED');
+
                     const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                     const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
                     const source = inputAudioContext.createMediaStreamSource(stream);
@@ -230,8 +225,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
                 },
                 onerror: (e: ErrorEvent) => {
                     console.error('API connection failed:', e);
-                    silentCleanup();
-                    // Assume any connection error is a key issue and trigger the callback
+                    handleDisconnect();
                     onInvalidApiKey();
                 },
                 onclose: () => {
@@ -250,11 +244,20 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
   
   const handleTextSubmit = (e: React.FormEvent) => {
       e.preventDefault();
-      // This is a placeholder. In a real app, you would send this text
-      // to the model, likely requiring a different API call or session type.
       alert("Text input is a placeholder in this demo.");
       setTextInputVisible(false);
   }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        setUploadedFileName(file.name);
+        setTimeout(() => {
+            setActiveTool(null);
+            setUploadedFileName(null);
+        }, 4000);
+    }
+  };
 
   useEffect(() => {
     return () => { handleDisconnect(); };
@@ -263,14 +266,35 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
   const renderTool = () => {
     switch (activeTool) {
         case 'UPLOAD':
+            if (uploadedFileName) {
+                return (
+                    <div className="flex justify-center p-4 animation-slide-up">
+                        <div className="w-full max-w-md bg-[#1A1A1A] border border-[#00FF00]/50 rounded-lg p-8 text-center text-[#00FF00]">
+                            <p className="font-semibold">✅ آپلود موفقیت آمیز بود</p>
+                            <p className="text-xs text-gray-400 mt-1 break-all">{uploadedFileName}</p>
+                        </div>
+                    </div>
+                );
+            }
             return (
-                <div className="flex justify-center p-4">
-                    <input type="file" className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#FFA500]/10 file:text-[#FFA500] hover:file:bg-[#FFA500]/20"/>
+                <div className="flex justify-center p-4 animation-slide-up">
+                    <label htmlFor="file-upload" className="cursor-pointer w-full max-w-md bg-[#1A1A1A] border-2 border-dashed border-[#FFA500]/50 rounded-lg p-8 text-center hover:border-[#FFA500] transition-colors">
+                        <div className="flex flex-col items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#FFA500]/70 mb-4">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <p className="font-semibold text-[#FFA500]">برای آپلود فایل اینجا کلیک کنید</p>
+                            <p className="text-xs text-gray-400 mt-1">یا فایل خود را بکشید و در اینجا رها کنید</p>
+                        </div>
+                        <input id="file-upload" type="file" className="hidden" onChange={handleFileSelect} />
+                    </label>
                 </div>
-            )
+            );
         case 'DOWNLOAD':
             return (
-                 <div className="flex justify-center p-4">
+                 <div className="flex justify-center p-4 animation-slide-up">
                     <a href={downloadInfo?.url} download={downloadInfo?.filename} className="px-6 py-2 bg-[#FFA500] text-[#050505] rounded-md hover:bg-[#FF6600] transition-colors font-bold">
                         Download {downloadInfo?.filename}
                     </a>
@@ -302,10 +326,10 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             </main>
             <footer className="h-12">
                 <p className="text-sm text-[#FFA500]/70 mb-2">
-                    {connectionState === 'IDLE' && 'Tap the microphone to start'}
-                    {isConnecting && 'Connecting...'}
-                    {connectionState === 'ERROR' && (errorMessage || 'Connection error')}
-                    {connectionState === 'DISCONNECTED' && 'Session ended. Tap to restart'}
+                    {connectionState === 'IDLE' && 'برای شروع روی میکروفون ضربه بزنید'}
+                    {isConnecting && 'در حال اتصال...'}
+                    {connectionState === 'ERROR' && (errorMessage || 'خطا در اتصال')}
+                    {connectionState === 'DISCONNECTED' && 'جلسه به پایان رسید. برای شروع مجدد ضربه بزنید'}
                 </p>
             </footer>
         </div>
@@ -333,8 +357,8 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
       <footer className="pt-4 border-t border-[#FFA500]/20 flex-shrink-0 flex flex-col items-center justify-center">
         {isTextInputVisible ? (
              <form onSubmit={handleTextSubmit} className="w-full flex items-center gap-2 p-2">
-                <input type="text" placeholder="Type your message..." className="flex-1 bg-[#1A1A1A] border border-[#FFA500]/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]"/>
-                <button type="submit" className="px-4 py-2 bg-[#FFA500] text-[#050505] rounded-lg font-bold">Send</button>
+                <input type="text" placeholder="پیام خود را تایپ کنید..." className="flex-1 bg-[#1A1A1A] border border-[#FFA500]/50 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]"/>
+                <button type="submit" className="px-4 py-2 bg-[#FFA500] text-[#050505] rounded-lg font-bold">ارسال</button>
              </form>
         ) : (
             <button
