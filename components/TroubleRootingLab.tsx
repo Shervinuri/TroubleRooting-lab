@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Modality, Blob, LiveServerMessage } from '@google/genai';
 import type { ChatMessage, ContentPart } from '../types';
 import { MessageSender } from '../types';
-import ChatMessageComponent from './ChatMessage';
+import ChatMessageComponent, { ShenAvatar, UserAvatar } from './ChatMessage';
 import { SYSTEM_PROMPT } from '../constants';
 import { encode, decode, decodeAudioData, createBlob } from '../utils/audio';
 
@@ -289,17 +289,19 @@ const TroubleRootingLab: React.FC = () => {
             <ChatMessageComponent key={msg.id} message={msg} />
           ))}
           {currentOutputTranscription && (
-              <div className="flex justify-start">
-                <div className="max-w-full md:max-w-[85%] bg-[#FFA500]/5 p-4 rounded-lg rounded-bl-none text-[#FFA500]/60 italic">
-                    {currentOutputTranscription}
-                </div>
+              <div className="flex items-end gap-3 justify-start animation-slide-up">
+                  <ShenAvatar />
+                  <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A] border border-[#FFA500]/30 p-4 rounded-2xl rounded-bl-lg text-[#FFA500]/70 italic">
+                      {currentOutputTranscription}
+                  </div>
               </div>
           )}
           {currentInputTranscription && (
-               <div className="flex justify-end">
-                <div className="max-w-full md:max-w-[85%] bg-transparent border border-[#FFA500]/10 p-4 rounded-lg rounded-br-none text-[#FFA500]/40 italic">
-                    {currentInputTranscription}
-                </div>
+               <div className="flex items-end gap-3 justify-end animation-slide-up">
+                  <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A] border border-[#FFA500]/20 p-4 rounded-2xl rounded-br-lg text-gray-300/60 italic">
+                      <p>{currentInputTranscription}</p>
+                  </div>
+                  <UserAvatar />
               </div>
           )}
           <div ref={chatEndRef} />
