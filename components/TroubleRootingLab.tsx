@@ -165,6 +165,13 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
                 onopen: () => {
                     setConnectionState('CONNECTED');
 
+                    // Nudge the bot to start speaking its intro
+                    sessionPromiseRef.current?.then((session) => {
+                        const silentData = new Float32Array(1024).fill(0);
+                        const silentPcmBlob = createBlob(silentData);
+                        session.sendRealtimeInput({ media: silentPcmBlob });
+                    });
+
                     const inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
                     const scriptProcessor = inputAudioContext.createScriptProcessor(4096, 1, 1);
                     const source = inputAudioContext.createMediaStreamSource(stream);
