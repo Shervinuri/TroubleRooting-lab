@@ -1,0 +1,7 @@
+{
+  "name": "SHΞN™ TroubleRooting Lab",
+  "description": "An interactive, voice-first troubleshooting wizard to expertly guide users, step-by-step, to solve issues with running apps on rooted Android devices.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
