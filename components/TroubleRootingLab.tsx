@@ -376,7 +376,7 @@ const TroubleRootingLab: React.FC<TroubleRootingLabProps> = ({ apiKey, onInvalid
             ) : (
                 <button
                     onClick={handleDisconnect}
-                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-colors ${connectionState === 'CONNECTED' ? 'bg-red-500/80 text-white' : 'bg-[#FFA500]/50 text-gray-300'}`}
+                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300 ${connectionState === 'CONNECTED' ? 'bg-transparent border-2 border-green-500 text-green-500 hover:bg-green-500/10' : 'bg-[#FFA500]/50 text-gray-300'}`}
                     aria-label="End Session"
                   >
                     <MicrophoneIcon />

@@ -81,10 +81,12 @@ const NetworkBackground: React.FC = () => {
         projY = centerY + (dx * sin + dy * cos);
 
         // Star size is based on its distance (z-coordinate)
-        const size = (1 - star.z / width) * 2.5;
+        const size = (1 - star.z / width) * 3;
 
         // Draw the star if it's visible on the screen
         if (size > 0.1 && projX > 0 && projX < width && projY > 0 && projY < height) {
+            ctx.shadowBlur = 8; // Add glow effect
+            ctx.shadowColor = star.color; // Glow with the star's color
             ctx.beginPath();
             ctx.arc(projX, projY, size, 0, Math.PI * 2);
             ctx.fillStyle = star.color;
@@ -92,6 +94,7 @@ const NetworkBackground: React.FC = () => {
         }
       });
       
+      ctx.shadowBlur = 0; // Reset shadow for other elements if any
       animationFrameId = requestAnimationFrame(animate);
     };
 
