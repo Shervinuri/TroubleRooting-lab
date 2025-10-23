@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import type { ChatMessage, ContentPart } from '../types';
 import { MessageSender } from '../types';
@@ -62,17 +61,9 @@ export const ShenAvatar: React.FC = () => (
     </div>
 );
 
-export const UserAvatar: React.FC = () => (
-    <div className="w-9 h-9 rounded-full bg-[#1c1c1c] border-2 border-[#FFA500]/30 flex items-center justify-center text-[#FFA500]/70 flex-shrink-0">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-        </svg>
-    </div>
-);
-
-
 const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message }) => {
   const isShen = message.sender === MessageSender.Shen;
+  const isTranscription = message.id === 'transcription';
 
   const renderPart = (part: ContentPart, index: number) => {
     switch (part.type) {
@@ -94,7 +85,7 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message }) => {
       <div className="flex items-end gap-3 justify-start animation-slide-up">
         <ShenAvatar />
         <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A] border border-[#FFA500]/30 p-4 rounded-2xl rounded-bl-lg">
-            <div className="prose prose-invert prose-p:my-1 prose-a:text-[#FF6600] text-gray-200 space-y-2">
+            <div className={`prose prose-invert prose-p:my-1 prose-a:text-[#FF6600] space-y-2 ${isTranscription ? 'text-gray-200/50' : 'text-gray-200'}`}>
               {message.parts.map(renderPart)}
             </div>
         </div>
@@ -102,14 +93,8 @@ const ChatMessageComponent: React.FC<ChatMessageProps> = ({ message }) => {
     );
   }
 
-  return (
-    <div className="flex items-end gap-3 justify-end animation-slide-up">
-      <div className="max-w-full md:max-w-[85%] bg-[#1A1A1A] border border-[#FFA500]/20 p-4 rounded-2xl rounded-br-lg text-gray-300">
-        <p>{message.parts.map(p => p.content).join(' ')}</p>
-      </div>
-      <UserAvatar />
-    </div>
-  );
+  // User messages are no longer rendered based on the new requirements
+  return null;
 };
 
 export default ChatMessageComponent;
